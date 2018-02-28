@@ -46,16 +46,7 @@ class ComisionesPromotoresController extends Controller
 		$tipoComisionPromotor = $request->get('tipoPromotor');
 		if($quincena == 1) $periodo1 = $year.'-'.$mes.'-10';
 		elseif($quincena == 2) $periodo1 = $year.'-'.$mes.'-20';
-		$generaComisiones = GeneraComisiones::select()->where('periodo', $periodo1)->where('tipoComision', $tipoComisionPromotor)->first();
-		
-		if (!isset($generaComisiones))
-			$generaComisiones = 'No hay nada';
-		elseif ($generaComisiones->estatus == 0)
-			$generaComisiones = 'Si hay y su estatus es 0';
-		else $generaComisiones = 'Si hay pero su estatus no es 0';
-		return $generaComisiones;
-
-	/*
+		$generaComisiones = GeneraComisiones::where('periodo', $periodo1)->where('tipoComision', $tipoComisionPromotor)->first();
 		$meses = [
 			1=>"Enero", 2=>"Febrero",
 			3=>"Marzo", 4=>"Abril",
@@ -67,17 +58,25 @@ class ComisionesPromotoresController extends Controller
 		$mes =  substr($meses[$mes], 0, 3);
 		$periodo = $mes.$year.'_'.$quincena;
 
+		if (!isset($generaComisiones))
+			return $generaComisiones = 'No hay nada';
+		elseif ($generaComisiones->estatus == 0){
+			$generaComisiones->update(['estatus'=> 1]);
+			return $this->prueba($periodo, $year, $tipoComisionPromotor, $quincena);
+		}else return $this->prueba($periodo, $year, $tipoComisionPromotor, $quincena);
+	}
+
+	protected function prueba($periodo, $year, $tipoComisionPromotor, $quincena) {
 		//Datos de la tabla comisones_perido
 		$comisionesPeriodos = ComisionesPeriodo::select('fecha_inicial','fecha_final','periodo','inicial_ingresada','final_ingresada')
 		->where('periodo', $periodo)
 		->where('ano', $year)
 		->first();
-		
+		//Se guarda los datos de la busqueda en variables
 		$fechaI = $comisionesPeriodos->fecha_inicial;
 		$fechaF = $comisionesPeriodos->fecha_final;
 		$fechaInicialI = $comisionesPeriodos->inicial_ingresada;
 		$fechaFinalI = $comisionesPeriodos->final_ingresada;
-		
 
 		//Datos entre las tablas tblpromotores y captura
 		$capturas = Capturas::select(
@@ -93,7 +92,7 @@ class ComisionesPromotoresController extends Controller
 		->groupBy('captura.StrNom_corto')
 		->orderBy('tblPromotores.StrApellidoPa')
 		->get();
-		
+
 		foreach ($capturas as $key => $value) {
 			if ($value->estatus_solicitud >= 1) {
 				$validaciones = Capturas::select('captura.StrNom_corto',DB::raw('count(captura.estatus_solicitud) as solicitudMovistar'))
@@ -112,7 +111,7 @@ class ComisionesPromotoresController extends Controller
 		foreach ($portasMovistar as $key3) {
 			$array[] = $key3->solicitudMovistar;
 		}
-		return view('comisiones/comisionesPromotoresReport', compact('capturas', 'array', 'fechaI', 'fechaF', 'fechaInicialI', 'fechaFinalI', 'quincena'));*/
+		return view('comisiones/comisionesPromotoresReport', compact('capturas', 'array', 'fechaI', 'fechaF', 'fechaInicialI', 'fechaFinalI', 'quincena'));
 	}
 
 	//Exporta el reporte de comisiones de promotores
@@ -522,4 +521,6 @@ class ComisionesPromotoresController extends Controller
 			});
 		})->export('xlsx');
 	}
+
+	
 }
