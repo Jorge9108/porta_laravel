@@ -1,12 +1,7 @@
 @include('index')
-@if (Request::get('id') == 1)
-	@php $url = route('comisionesPromotoresReport'); @endphp
-@else
-	@php $url = route('comisionesPromReportGnral'); @endphp
-@endif
 
 <h1 align="center">{{$title}}</h1><br><br>
-<form action="{{ $url }}" method="post">
+<form action="{{ route('comisionesPromotoresReport') }}" method="post" id="form">
 <input type="hidden" name="_token" value="{{ csrf_token() }}">
 <div class="grid" style="padding: 0 5% 0 5%">
 	<div class="row cells4">
@@ -57,3 +52,31 @@
 	</div>
 </div>
 </form>
+<script type="text/javascript">
+$.ajaxSetup({headers: {'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')} });
+
+$("#form").submit(function(e){
+	//e.preventDefault();
+	var param = {
+		'year': $("#year").val(),
+		'mes': $("#mes").val(),
+		'quincena': $("#quincena").val(),
+		'tipoPromotor': $("#tipoPromotor").val()
+	};
+
+	$.ajax({
+		url:'',
+		type:'POST',
+		dataType: 'json',
+		data:param,
+		success:function(data){
+			if (data[0] == 0)
+				$.Notify({type: 'warning', caption: '¡Nota!', content: data[1]});
+			else if (data[0] == 1) {}
+		}
+	});	
+});
+@if(Session::has('msg'))
+	$.Notify({type: 'warning', caption: '¡Nota!', content: "{{ Session::get('msg') }}"});
+@endif
+</script>

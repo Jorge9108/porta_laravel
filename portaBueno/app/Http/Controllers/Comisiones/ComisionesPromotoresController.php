@@ -1,8 +1,10 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Comisiones;
 
+use Illuminate\Support\Facades\Session;
 use Illuminate\Http\Request;
+use App\Http\Controllers\Controller;
 use App\ComisionesConcentrado;
 use App\GeneraComisiones;
 use App\ComisionesPeriodo;
@@ -12,6 +14,8 @@ use App\TblComisiones;
 use App\Validaciones;
 use App\Comisiones;
 use App\Capturas;
+use App\Ciudad;
+use DateTime;
 use Excel;
 use DB;
 
@@ -33,60 +37,57 @@ class ComisionesPromotoresController extends Controller
 
 	//Reporte de comisiones de promotores
 	public function report(Request $request) {
-		$this->validate($request,[
-			'year' => 'required',
-			'mes' => 'required',
-			'quincena' => 'required',
-			'tipoPromotor' => 'required'
-		]);
-
-		$year = $request->get('year');
-		$mes = $request->get('mes');
-		$quincena = $request->get('quincena');
-		$tipoComisionPromotor = $request->get('tipoPromotor');
-		if($quincena == 1) $periodo1 = $year.'-'.$mes.'-10';
-		elseif($quincena == 2) $periodo1 = $year.'-'.$mes.'-20';
-		$generaComisiones = GeneraComisiones::where('periodo', $periodo1)->where('tipoComision', $tipoComisionPromotor)->first();
-		$meses = [
-			1=>"Enero", 2=>"Febrero",
-			3=>"Marzo", 4=>"Abril",
-			5=>"Mayo", 6=>"Junio",
-			7=>"Julio", 8=>"Agosto",
-			9=>"Septiembre", 10=>"Octubre",
-			11=>"Noviembre", 12=>"Diciembre"
-		];
-		$mes =  substr($meses[$mes], 0, 3);
-		$periodo = $mes.$year.'_'.$quincena;
-
-		if (!isset($generaComisiones))
-			return $generaComisiones = 'No hay nada';
-		elseif ($generaComisiones->estatus == 0){
-			$generaComisiones->update(['estatus'=> 1]);
-			return $this->prueba($periodo, $year, $tipoComisionPromotor, $quincena);
-		}else return $this->prueba($periodo, $year, $tipoComisionPromotor, $quincena);
+		//if($request->ajax()) {
+			$year = $request->year;
+			$mes = $request->mes;
+			$quincena = $request->quincena;
+			$tipoComisionPromotor = $request->tipoPromotor;
+			$fecha = new DateTime($year.'-'.$mes);
+			$meses = [
+				1=>"Enero", 2=>"Febrero",
+				3=>"Marzo", 4=>"Abril",
+				5=>"Mayo", 6=>"Junio",
+				7=>"Julio", 8=>"Agosto",
+				9=>"Septiembre", 10=>"Octubre",
+				11=>"Noviembre", 12=>"Diciembre"
+			];
+			$mesL =  substr($meses[$mes], 0, 3);
+			$periodo = $mesL.$year.'_'.$quincena;
+			if($quincena == 1) {
+				$fecha->modify('first day of this month');
+				$fechaI = $fecha->format('Y-m-d');
+				$fechaF = $year.'-'.$mes.'-15';
+				$periodo1 = $year.'-'.$mes.'-10';
+			}
+			elseif($quincena == 2) {
+				$fecha->modify('last day of this month');
+				$fechaF = $fecha->format('Y-m-d');
+				$fechaI = $year.'-'.$mes.'-16';
+				$periodo1 = $year.'-'.$mes.'-20';
+			}
+			$generaComisiones = GeneraComisiones::where('periodo', $periodo1)->where('tipoComision', $tipoComisionPromotor)->first();
+		
+			if (!isset($generaComisiones)){
+				//Session::flash();
+				return back()->with('msg', 'Aún no esta permitido generar el reporte de comisiones.');
+			}
+			elseif ($generaComisiones->estatus == 0){
+				$generaComisiones->update(['estatus'=> 1]);
+				return $this->prueba($fechaI, $fechaF, $year, $tipoComisionPromotor, $quincena, $periodo, 'insert');
+			}else return $this->prueba($fechaI, $fechaF, $year, $tipoComisionPromotor, $quincena, $periodo, 'update');
+		//}
 	}
 
-	protected function prueba($periodo, $year, $tipoComisionPromotor, $quincena) {
-		//Datos de la tabla comisones_perido
-		$comisionesPeriodos = ComisionesPeriodo::select('fecha_inicial','fecha_final','periodo','inicial_ingresada','final_ingresada')
-		->where('periodo', $periodo)
-		->where('ano', $year)
-		->first();
-		//Se guarda los datos de la busqueda en variables
-		$fechaI = $comisionesPeriodos->fecha_inicial;
-		$fechaF = $comisionesPeriodos->fecha_final;
-		$fechaInicialI = $comisionesPeriodos->inicial_ingresada;
-		$fechaFinalI = $comisionesPeriodos->final_ingresada;
-
+	protected function prueba($fechaI, $fechaF, $year, $tipoComisionPromotor, $quincena, $periodo, $opc) {
 		//Datos entre las tablas tblpromotores y captura
 		$capturas = Capturas::select(
-			'captura.StrNom_corto', 'tblpromotores.SupAsignado',
-			'tblPromotores.StrNombre', 'tblPromotores.StrApellidoPa', 
+			'captura.StrNom_corto', 'tblpromotores.SupAsignado', 'tblPromotores.estatus',
+			'tblPromotores.StrNombre', 'tblPromotores.StrApellidoPa', 'tblPromotores.StrRegion',
 			'tblPromotores.StrApellidoMa', 'tblPromotores.StrCiudad',
 			DB::raw('count(captura.estatus_solicitud) as estatus_solicitud')
 		)
 		->join('tblPromotores', 'tblpromotores.StrNom_corto', '=', 'captura.StrNom_corto')
-		->whereBetween('captura.fecha_ulti_sttus', [$comisionesPeriodos->fecha_inicial, $comisionesPeriodos->fecha_final])
+		->whereBetween('captura.fecha_ulti_sttus', [$fechaI, $fechaF])
 		->where('captura.estatus_solicitud', 'Portabilidad_Exitosa')
 		->where('tblpromotores.tipo_comision', $tipoComisionPromotor)
 		->groupBy('captura.StrNom_corto')
@@ -97,25 +98,56 @@ class ComisionesPromotoresController extends Controller
 			if ($value->estatus_solicitud >= 1) {
 				$validaciones = Capturas::select('captura.StrNom_corto',DB::raw('count(captura.estatus_solicitud) as solicitudMovistar'))
 				->join('validacion', 'captura.id_cliente', '=', 'validacion.id_cliente')
-				->whereBetween('captura.fecha_ulti_sttus', [$comisionesPeriodos->fecha_inicial, $comisionesPeriodos->fecha_final])
+				->whereBetween('captura.fecha_ulti_sttus', [$fechaI, $fechaF])
 				->where('captura.estatus_solicitud', 'Portabilidad_Exitosa')
 				->where('validacion.proveedor_actual', 'MOVISTAR')
 				->where('captura.StrNom_corto', $value->StrNom_corto)
 				->get();
-
 				foreach ($validaciones as $key2) {
-					$portasMovistar[] = $key2;
+					$array[] = $key2->solicitudMovistar;
+				}
+				$porcentajeCiudad = Ciudad::select('porcentaje')->where('nombre', $value->StrCiudad)->first();
+				$porcentajes[] = $porcentajeCiudad->porcentaje;
+				$concentradoCom = ComisionesConcentrado::select()->where('periodo', $periodo)->where('StrNom_corto', $value->StrNom_corto)->first();
+				$porcientoMov = round($array[$key]/$value->estatus_solicitud * 100, 0);
+				$totalP = $value->estatus_solicitud;
+				if ($porcientoMov < $porcentajeCiudad->porcentaje)
+					$totalP = round($array[$key] / ($porcentajeCiudad->porcentaje/100), 0);
+				if ($opc == 'update') {
+					$valor = [
+						'portas_num' => $value->estatus_solicitud,
+						'estatus_baja' => $value->estatus,
+						'num_movistar' => $array[$key],
+						'porcentaje' => $porcientoMov,
+						'total_pagar' => $totalP,
+						'descuento' => ($value->estatus_solicitud - $totalP),
+						'StrRegion' => $value->StrRegion
+					];
+					$concentradoCom->update($valor);
+				}
+				if ($opc == 'insert') {
+					$valor = [
+						'StrNom_corto' => $value->StrNom_corto,
+						'periodo' => $periodo,
+						'portas_num' => $value->estatus_solicitud,
+						'estatus_baja' => $value->estatus,
+						'num_movistar' => $array[$key],
+						'porcentaje' => $porcientoMov,
+						'total_pagar' => $totalP,
+						'descuento' => ($value->estatus_solicitud - $totalP),
+						'StrRegion' => $value->StrRegion
+					];
+					$concentradoCom->create($valor);
 				}
 			}
 		}
-		foreach ($portasMovistar as $key3) {
-			$array[] = $key3->solicitudMovistar;
-		}
-		return view('comisiones/comisionesPromotoresReport', compact('capturas', 'array', 'fechaI', 'fechaF', 'fechaInicialI', 'fechaFinalI', 'quincena'));
+		//return response()->view('comisiones/comisionesPromotoresReport', $fechaI, $fechaF, $tipoComisionPromotor, $periodo, $capturas, $array, $quincena, $porcentajes);
+		return view('comisiones/comisionesPromotoresReport', compact('capturas', 'array', 'fechaI', 'fechaF', 'quincena', 'porcentajes', 'tipoComisionPromotor', 'periodo'));
+		//return response()->json([1, $fechaI, $fechaF, $tipoComisionPromotor, $periodo, $capturas, $array, $quincena, $porcentajes, ]);
 	}
 
 	//Exporta el reporte de comisiones de promotores
-	public function exportReport($apellidoP, $apellidoM, $nombre, $ciudad, $fechaI, $fechaF, $fechaInicialI, $fechaFinalI, $StrNom_corto, $supAsignado, $totalPagar, $totalMov, $porcientoMov, $totalDts, $quincena) {
+	public function exportReport($apellidoP, $apellidoM, $nombre, $ciudad, $fechaI, $fechaF, $StrNom_corto, $supAsignado, $totalPagar, $totalMov, $porcientoMov, $totalDts, $quincena) {
 		$dtsPromotor = TblPromotores::select()->where('StrNom_corto', $StrNom_corto)->first();//Datos del promotor
 		$meses = [
 			1=>"Enero", 2=>"Febrero",
@@ -136,26 +168,12 @@ class ComisionesPromotoresController extends Controller
 		)
 		->whereBetween('fecha_ulti_sttus', [$fechaI, $fechaF])
 		->where('StrNom_corto', $StrNom_corto)
-		->whereIn('estatus_solicitud', ['Portabilidad_Exitosa', 'sim_no_recup_penalizada'])
 		->orderBy('fecha_ulti_sttus')
 		->get();
-		//Datos de la lista que no son exitosos
-		$capturasR1 = Capturas::select(
-			'contatena', 'num_a_portar', 'ciudad_cliente',
-			'nip', 'StrNom_corto', 'estatus_solicitud',
-			'fecha_ulti_sttus', 'fecha_validacion', 'encuesta_estatus'
-		)
-		->whereBetween('fecha_validacion', [$fechaInicialI, $fechaFinalI])
-		->where('StrNom_corto', $StrNom_corto)
-		->whereNotIn('estatus_solicitud', ['Portabilidad_Exitosa', 'sim_no_recup_penalizada'])
-		->orderBy('fecha_ulti_sttus')
-		->get();
+		$totalRegistros = count($capturasR);
 		
-		
-		$totalRegistros = count($capturasR)+count($capturasR1);
-
-		Excel::create($fileName, function($excel) use($apellidoP, $apellidoM, $nombre, $ciudad, $fechaI, $fechaF, $StrNom_corto, $supAsignado, $totalPagar, $totalMov, $porcientoMov, $totalDts, $totalRegistros, $capturasR, $capturasR1, $dtsPromotor){
-			$excel->sheet('Reporte', function($sheet) use($apellidoP, $apellidoM, $nombre, $ciudad, $fechaI, $fechaF, $StrNom_corto, $supAsignado, $totalPagar, $totalMov, $porcientoMov, $totalDts, $totalRegistros, $capturasR, $capturasR1, $dtsPromotor){
+		Excel::create($fileName, function($excel) use($apellidoP, $apellidoM, $nombre, $ciudad, $fechaI, $fechaF, $StrNom_corto, $supAsignado, $totalPagar, $totalMov, $porcientoMov, $totalDts, $totalRegistros, $capturasR, $dtsPromotor){
+			$excel->sheet('Reporte', function($sheet) use($apellidoP, $apellidoM, $nombre, $ciudad, $fechaI, $fechaF, $StrNom_corto, $supAsignado, $totalPagar, $totalMov, $porcientoMov, $totalDts, $totalRegistros, $capturasR, $dtsPromotor){
 				$sheet->mergeCells('A1:H1');// Titulo general y primera tabla
 				$sheet->row(1, ['REPORTE DE COMISIONES DE LA QUINCENA PROMOTORES']);// Titulo general y primera tabla
 				$sheet->mergeCells('A2:H2');// Periodo
@@ -181,18 +199,6 @@ class ComisionesPromotoresController extends Controller
 						$sheet->cells('A'.$fila.':H'.$fila, function($cells) { $cells->setBackground('#ECECEC'); });
 					$fila++; $cont++;
 				}
-				foreach ($capturasR1 as $key1) {
-					$dtsExt = Validaciones::select('proveedor_actual', 'pregunta3')
-					->where('folio_asignado', $key->folio_asignado)
-					->first();
-					$sheet->row($fila, [
-						$cont, $key1->contatena, $key1->num_a_portar, $key1->estatus_solicitud,
-						$dtsExt->proveedor_actual, $dtsExt->pregunta3, $key1->fecha_validacion, $key1->fecha_ulti_sttus
-					]);
-					if ($fila %2 == 0)
-						$sheet->cells('A'.$fila.':H'.$fila, function($cells) { $cells->setBackground('#ECECEC'); });
-					$fila++; $cont++;
-				}
 
 				//Diseño a la hoja
 				$sheet->setPageMargin(.30);
@@ -207,7 +213,7 @@ class ComisionesPromotoresController extends Controller
 					$cells->setAlignment('center');
 				});
 			});
-			$excel->sheet('Tablas Generales', function($sheet) use($apellidoP, $apellidoM, $nombre, $ciudad, $fechaI, $fechaF, $StrNom_corto, $supAsignado, $totalPagar, $totalMov, $porcientoMov, $totalDts, $totalRegistros, $capturasR, $capturasR1, $dtsPromotor){
+			$excel->sheet('Tablas Generales', function($sheet) use($apellidoP, $apellidoM, $nombre, $ciudad, $fechaI, $fechaF, $StrNom_corto, $supAsignado, $totalPagar, $totalMov, $porcientoMov, $totalDts, $totalRegistros, $capturasR, $dtsPromotor){
 				$sheet->mergeCells('A1:H1');// Titulo general y primera tabla
 				$sheet->row(1, ['REPORTE DE COMISIONES DE LA QUINCENA']);// Titulo general y primera tabla
 				$sheet->mergeCells('A2:H2');// Periodo
@@ -327,7 +333,7 @@ class ComisionesPromotoresController extends Controller
 		})->export('xlsx');
 	}
 
-	//Reporte de comisiones generales de los promotores (Relacion de pagos promo)
+	//Reporte de comisiones generales de los promotores (Relacion de pagos promo) //NO FUNCIONA POR EL MOMENTO
 	public function generalReport(Request $request) {
 		$this->validate($request,[
 			'year' => 'required',
@@ -520,6 +526,58 @@ class ComisionesPromotoresController extends Controller
 				});
 			});
 		})->export('xlsx');
+	}
+
+	public function paginacion(Request $request) {
+		if ($request->ajax()) {
+			$data = "";
+			//Datos entre las tablas tblpromotores y captura
+			$capturas = Capturas::select(
+				'captura.StrNom_corto', 'tblpromotores.SupAsignado', 'tblPromotores.estatus',
+				'tblPromotores.StrNombre', 'tblPromotores.StrApellidoPa', 'tblPromotores.StrRegion',
+				'tblPromotores.StrApellidoMa', 'tblPromotores.StrCiudad',
+				DB::raw('count(captura.estatus_solicitud) as estatus_solicitud')
+			)
+			->join('tblPromotores', 'tblpromotores.StrNom_corto', '=', 'captura.StrNom_corto')
+			->whereBetween('captura.fecha_ulti_sttus', [$request->fechaI, $request->fechaF])
+			->where('captura.estatus_solicitud', 'Portabilidad_Exitosa')
+			->where('tblpromotores.tipo_comision', $request->tipoComisionPromotor)
+			->groupBy('captura.StrNom_corto')
+			->orderBy('tblPromotores.StrApellidoPa')
+			->limit(9)
+			->get();
+
+			foreach ($capturas as $key => $value) {
+
+				if ($value->estatus_solicitud >= 1) {
+					$validaciones = Capturas::select('captura.StrNom_corto',DB::raw('count(captura.estatus_solicitud) as solicitudMovistar'))
+					->join('validacion', 'captura.id_cliente', '=', 'validacion.id_cliente')
+					->whereBetween('captura.fecha_ulti_sttus', [$request->fechaI, $request->fechaF])
+					->where('captura.estatus_solicitud', 'Portabilidad_Exitosa')
+					->where('validacion.proveedor_actual', 'MOVISTAR')
+					->where('captura.StrNom_corto', $value->StrNom_corto)
+					->first();
+					$porcentajeCiudad = Ciudad::select('porcentaje')->where('nombre', $value->StrCiudad)->first();
+					$porcientoMov = round($validaciones->solicitudMovistar/$value->estatus_solicitud * 100, 0); $totalPagar = $value->estatus_solicitud;
+					$data .= "<tr>";
+					$data .= "<td>$value->StrApellidoPa $value->StrApellidoMa $value->StrNombre</td>";
+					$data .= "<td align='center'>$value->estatus_solicitud</td>";
+					$data .= "<td align='center'>$validaciones->solicitudMovistar</td>";
+					if ($porcientoMov >= $porcentajeCiudad->porcentaje) {
+						$data .= "<td align='center'>$porcientoMov%</td>";
+						$data .= "<td align='center'>$totalPagar</td>";
+					}else {
+						$totalPagar = round($validaciones->solicitudMovistar / ($porcentajeCiudad->porcentaje/100), 0);
+						$data .= "<td align='center' style='color: red'>$porcientoMov%</td>";
+						$data .= "<td align='center' style='color: red'>$totalPagar</td>";
+					}
+					$data .= "<td>$value->StrCiudad</td>";
+					$data .= "<td align='center'><a href=".route('comisionesPromotoresDownload', [$value->StrApellidoPa,$value->StrApellidoMa,$value->StrNombre,$value->StrCiudad,$request->fechaI,$request->fechaF,$value->StrNom_corto,$value->SupAsignado,$totalPagar,$validaciones->solicitudMovistar,$porcientoMov,$value->estatus_solicitud,$request->quincena])."><span class='mif-download2 mif-lg' data-role='hint' data-hint-background='bg-blue' data-hint-color='fg-white' data-hint-mode='2' data-hint='Exportar reporte'></span></a></td>";
+					$data .= "</tr>";
+				}
+			}
+			return response()->json($data);
+		}
 	}
 
 	

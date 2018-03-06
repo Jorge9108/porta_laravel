@@ -2,10 +2,16 @@
 	<a class="app-bar-element branding" href="{{ route('index') }}">PORTA</a>
 	<ul class="app-bar-menu">
 		<li>
-			<a href="" class="dropdown-toggle"><span class="mif-money icon"></span>COMISIONES</a>
+			<a href="" class="dropdown-toggle">COMISIONES</a>
 			<ul class="d-menu" data-role="dropdown">
-				<li><a class="fluent-button" id="comisionesPromotores" href="{{route('comisionesPromotores', ['id' => 1])}}">Comisiones de promotores</a></li>
-				<li><a class="fluent-button" id="comisionesPromGnral" href="{{route('comisionesPromotores', ['id' => 2])}}">Relacion de pagos promotor</a></li>
+				<li><a class="fluent-button" id="comisionesPromotores" href="{{route('comisionesPromotores')}}">Comisiones de promotores</a></li>
+				
+			</ul>
+		</li>
+		<li>
+			<a href="" class="dropdown-toggle">ADMON</a>
+			<ul class="d-menu" data-role="dropdown">
+				<li><a class="fluent-button" id="comisionesPromotores" href="{{route('generaComision')}}">Porcentajes de ciudades</a></li>
 			</ul>
 		</li>
 	</ul>
